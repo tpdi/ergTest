@@ -21,6 +21,8 @@ import com.robotium.solo.Solo;
 
 
 public class PhoneTest extends ActivityInstrumentationTestCase2<MainActivity> {
+	
+	public static final int LONG_ENOUGH_FOR_CALLBACKS_TO_RUN = 1000;
 	private Solo solo;
 	
 	MainActivity mainActivity;
@@ -110,6 +112,42 @@ public class PhoneTest extends ActivityInstrumentationTestCase2<MainActivity> {
 		}
 	}
 	
+	
+	public void testGlissando() {
+		
+		for( EnumRadioGroup<?> egr : egrs) {
+			EGRDissector.make(egr).accept(new Scalpel() {
+				
+				@Override
+				public void apply(EGRDissector<?> t) {
+					for( int offset = 0 ; offset < t.rb.length; ++offset) {
+						RadioButton rb = t.rb[offset];
+						
+						if( rb.getVisibility() != View.VISIBLE) {
+							continue;
+						}
+						Enum<?> priorValue = t.erg.getCheckedValue();
+						solo.clickOnView(rb);
+						solo.sleep(LONG_ENOUGH_FOR_CALLBACKS_TO_RUN);
+
+						Enum<?> expectedValue = t.values[offset];
+						int expectedRbId = t.rbid[offset];
+						if( expectedValue != priorValue) {
+							// The callback is only triggered on a change!
+							assertTrue( "Got wrong value from callback " + t.cbresult.currentValue + " " + expectedValue,
+								t.cbresult.currentValue == expectedValue);
+							assertTrue( "Got wrong id from callback", t.cbresult.checkedId == expectedRbId);
+						}
+						assertTrue( "Got wrong value after click" + t.erg.getCheckedValue() + " " + expectedValue, 
+								t.erg.getCheckedValue() == expectedValue);
+						assertTrue( "Got wrong id after click", t.erg.getCheckedRadioButtonId() == expectedRbId);						
+					}
+					
+				}
+			});
+		}
+	}
+	
 	private void verifyDefaultValue(EnumRadioGroup<?> g, Enum<?> v) {
 		assertTrue("Default is not correct " + v, g.getDefault() == v);
 	}
@@ -190,28 +228,49 @@ public class PhoneTest extends ActivityInstrumentationTestCase2<MainActivity> {
 		
 	}
 	
-	private static class EGRDisector<T extends Enum<T>> {
-		public final EnumRadioGroup<T> egr;
+	private static class EGRDissector<T extends Enum<T>> {
+		public final EnumRadioGroup<T> erg;
 		public final int[] rbid;
 		public final T[] values;
 		public final RadioButton[] rb;
 		
-		private EGRDisector(EnumRadioGroup<T> egr) {
-			this.egr = egr;
-			values = egr.values();
+		private static class CallbackResult<T extends Enum<T>> {
+			T currentValue;
+			int checkedId;
+		}
+		
+		CallbackResult<T> cbresult = new CallbackResult<T>();
+		
+		private EGRDissector(EnumRadioGroup<T> erg) {
+			this.erg = erg;
+			values = erg.values();
 			this.rbid = new int[values.length];
 			this.rb = new RadioButton[values.length];
 			int offset = 0;
 			for( T ec : values) {
 				
-				rb[offset] = egr.findViewByEnum(ec);
+				rb[offset] = erg.findViewByEnum(ec);
 				rbid[offset] = rb[offset].getId();
 				++offset;
 			}
+			erg.setOnCheckedChangeListener( true, new EnumRadioGroup.OnCheckChangedListener<T>() {
+
+				@Override
+				public void onCheckedChanged(EnumRadioGroup<T> group, T currentValue, int checkedId) {
+					assertTrue("Callback returned wrong group!", group == EGRDissector.this.erg);
+					cbresult.currentValue = currentValue;
+					cbresult.checkedId = checkedId;
+					
+				}
+			});
 		}
 		
-		public static <T extends Enum<T>> EGRDisector<T> make(EnumRadioGroup<T> egr) {
-			return new EGRDisector<T>(egr);
+		public void accept( Scalpel s ) {
+			s.apply(this);
+		}
+		
+		public static <T extends Enum<T>> EGRDissector<T> make(EnumRadioGroup<T> egr) {
+			return new EGRDissector<T>(egr);
 		}
 	}
 	
@@ -219,8 +278,12 @@ public class PhoneTest extends ActivityInstrumentationTestCase2<MainActivity> {
 		void apply(T t );
 	}
 	
-	private <T extends Enum<T>> void glissando( EnumRadioGroup<T> egr,  Functor<EGRDisector<T>> f) {
-		f.apply(EGRDisector.make(egr));
+	public abstract class Scalpel implements Functor<EGRDissector<?>> {
+		
+	}
+	
+	private <T extends Enum<T>> void glissando( EGRDissector<T> dissector,  Scalpel f) {
+		f.apply(dissector);
 	}
 	
 	
